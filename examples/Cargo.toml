@@ -1,0 +1,8 @@
+[package]
+name = "test-examples"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "test_file"
+path = "test_file.rs"

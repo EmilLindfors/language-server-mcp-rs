@@ -1,0 +1,23 @@
+[package]
+name = "language-server-mcp"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "language-server-mcp"
+path = "src/main.rs"
+
+[[bin]]
+name = "client-example"
+path = "examples/client.rs"
+
+[dependencies]
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = ["server", "client", "transport-io", "transport-child-process"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+lsp-types = "0.95"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+schemars = "0.8"
+anyhow = "1.0"
