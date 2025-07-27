@@ -42,9 +42,17 @@ impl LspClient {
     }
     
     async fn initialize(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let workspace_folder = WorkspaceFolder {
+            uri: Url::from_file_path(&self.workspace_root).unwrap(),
+            name: self.workspace_root.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("workspace")
+                .to_string(),
+        };
+        
         let initialize_params = InitializeParams {
             capabilities: ClientCapabilities::default(),
-            root_uri: Some(Url::from_file_path(&self.workspace_root).unwrap()),
+            workspace_folders: Some(vec![workspace_folder]),
             initialization_options: Some(json!({
                 "cargo": {
                     "runBuildScripts": true,
@@ -138,6 +146,117 @@ impl LspClient {
             },
             DocumentDiagnosticReportResult::Partial(_) => Ok(vec![]),
         }
+    }
+    
+    pub async fn goto_definition(&self, file_path: &str, line: u32, column: u32) -> Result<Option<GotoDefinitionResponse>, Box<dyn std::error::Error>> {
+        // Ensure document is open
+        self.open_document(file_path).await?;
+        let params = GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: Url::from_file_path(file_path).unwrap(),
+                },
+                position: Position {
+                    line,
+                    character: column,
+                },
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        };
+        
+        self.request("textDocument/definition", params).await
+    }
+    
+    pub async fn find_references(&self, file_path: &str, line: u32, column: u32, include_declaration: bool) -> Result<Option<Vec<Location>>, Box<dyn std::error::Error>> {
+        // Ensure document is open
+        self.open_document(file_path).await?;
+        let params = ReferenceParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: Url::from_file_path(file_path).unwrap(),
+                },
+                position: Position {
+                    line,
+                    character: column,
+                },
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+            context: ReferenceContext {
+                include_declaration,
+            },
+        };
+        
+        self.request("textDocument/references", params).await
+    }
+    
+    pub async fn format_document(&self, file_path: &str) -> Result<Option<Vec<TextEdit>>, Box<dyn std::error::Error>> {
+        // Ensure document is open
+        self.open_document(file_path).await?;
+        let params = DocumentFormattingParams {
+            text_document: TextDocumentIdentifier {
+                uri: Url::from_file_path(file_path).unwrap(),
+            },
+            options: FormattingOptions {
+                tab_size: 4,
+                insert_spaces: true,
+                ..Default::default()
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        };
+        
+        self.request("textDocument/formatting", params).await
+    }
+    
+    pub async fn rename(&self, file_path: &str, line: u32, column: u32, new_name: &str) -> Result<Option<WorkspaceEdit>, Box<dyn std::error::Error>> {
+        // Ensure document is open
+        self.open_document(file_path).await?;
+        let params = RenameParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: Url::from_file_path(file_path).unwrap(),
+                },
+                position: Position {
+                    line,
+                    character: column,
+                },
+            },
+            new_name: new_name.to_string(),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        };
+        
+        self.request("textDocument/rename", params).await
+    }
+    
+    pub async fn code_actions(&self, file_path: &str, line: u32, column: u32) -> Result<Option<CodeActionResponse>, Box<dyn std::error::Error>> {
+        // Ensure document is open
+        self.open_document(file_path).await?;
+        let params = CodeActionParams {
+            text_document: TextDocumentIdentifier {
+                uri: Url::from_file_path(file_path).unwrap(),
+            },
+            range: Range {
+                start: Position {
+                    line,
+                    character: column,
+                },
+                end: Position {
+                    line,
+                    character: column,
+                },
+            },
+            context: CodeActionContext {
+                diagnostics: vec![], // We could pass current diagnostics here
+                only: None, // Request all types of code actions
+                trigger_kind: Some(CodeActionTriggerKind::INVOKED),
+                ..Default::default()
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        };
+        
+        self.request("textDocument/codeAction", params).await
     }
     
     async fn request<P: serde::Serialize, R: serde::de::DeserializeOwned>(

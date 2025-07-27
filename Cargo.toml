@@ -11,6 +11,7 @@ path = "src/main.rs"
 name = "client-example"
 path = "examples/client.rs"
 
+
 [dependencies]
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = ["server", "client", "transport-io", "transport-child-process"] }
 tokio = { version = "1", features = ["full"] }

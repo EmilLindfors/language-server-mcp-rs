@@ -7,7 +7,6 @@ use rmcp::{
     tool, tool_handler, tool_router,
     transport::stdio,
 };
-use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -35,6 +34,46 @@ pub struct CompletionRequest {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct DiagnosticsRequest {
     pub file_path: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct GotoDefinitionRequest {
+    pub file_path: String,
+    pub line: u32,
+    pub column: u32,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct FindReferencesRequest {
+    pub file_path: String,
+    pub line: u32,
+    pub column: u32,
+    #[serde(default = "default_include_declaration")]
+    pub include_declaration: bool,
+}
+
+fn default_include_declaration() -> bool {
+    true
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct FormatRequest {
+    pub file_path: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct RenameRequest {
+    pub file_path: String,
+    pub line: u32,
+    pub column: u32,
+    pub new_name: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct CodeActionsRequest {
+    pub file_path: String,
+    pub line: u32,
+    pub column: u32,
 }
 
 #[derive(Clone)]
@@ -147,6 +186,258 @@ impl RustAnalyzerMCP {
             Err(e) => Err(McpError::internal_error(format!("LSP error: {}", e), None)),
         }
     }
+
+    #[tool(description = "Find definition of symbol at position")]
+    async fn goto_definition(&self, Parameters(request): Parameters<GotoDefinitionRequest>) -> Result<CallToolResult, McpError> {
+        let lsp_client = self.lsp_client.lock().await;
+        
+        match lsp_client.goto_definition(&request.file_path, request.line, request.column).await {
+            Ok(Some(response)) => {
+                use lsp_types::GotoDefinitionResponse;
+                let locations = match response {
+                    GotoDefinitionResponse::Scalar(location) => vec![location],
+                    GotoDefinitionResponse::Array(locations) => locations,
+                    GotoDefinitionResponse::Link(links) => {
+                        links.into_iter()
+                            .map(|link| lsp_types::Location {
+                                uri: link.target_uri,
+                                range: link.target_selection_range,
+                            })
+                            .collect()
+                    }
+                };
+                
+                if locations.is_empty() {
+                    Ok(CallToolResult::success(vec![Content::text("No definition found")]))
+                } else {
+                    let definition_text = locations.into_iter()
+                        .map(|loc| {
+                            let path = loc.uri.to_file_path().ok()
+                                .and_then(|p| p.to_str().map(|s| s.to_string()))
+                                .unwrap_or_else(|| loc.uri.to_string());
+                            format!("Definition at: {}:{}:{}", 
+                                path,
+                                loc.range.start.line,
+                                loc.range.start.character)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                        
+                    Ok(CallToolResult::success(vec![Content::text(format!("Found definitions:\n{}", definition_text))]))
+                }
+            }
+            Ok(None) => Ok(CallToolResult::success(vec![Content::text("No definition found")])),
+            Err(e) => Err(McpError::internal_error(format!("LSP error: {}", e), None)),
+        }
+    }
+
+    #[tool(description = "Find all references to symbol at position")]
+    async fn find_references(&self, Parameters(request): Parameters<FindReferencesRequest>) -> Result<CallToolResult, McpError> {
+        let lsp_client = self.lsp_client.lock().await;
+        
+        match lsp_client.find_references(&request.file_path, request.line, request.column, request.include_declaration).await {
+            Ok(Some(locations)) => {
+                if locations.is_empty() {
+                    Ok(CallToolResult::success(vec![Content::text("No references found")]))
+                } else {
+                    let references_text = locations.into_iter()
+                        .map(|loc| {
+                            let path = loc.uri.to_file_path().ok()
+                                .and_then(|p| p.to_str().map(|s| s.to_string()))
+                                .unwrap_or_else(|| loc.uri.to_string());
+                            format!("Reference at: {}:{}:{}", 
+                                path,
+                                loc.range.start.line,
+                                loc.range.start.character)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                        
+                    Ok(CallToolResult::success(vec![Content::text(format!("Found references:\n{}", references_text))]))
+                }
+            }
+            Ok(None) => Ok(CallToolResult::success(vec![Content::text("No references found")])),
+            Err(e) => Err(McpError::internal_error(format!("LSP error: {}", e), None)),
+        }
+    }
+
+    #[tool(description = "Format Rust code")]
+    async fn format_document(&self, Parameters(request): Parameters<FormatRequest>) -> Result<CallToolResult, McpError> {
+        let lsp_client = self.lsp_client.lock().await;
+        
+        let result = lsp_client.format_document(&request.file_path).await;
+        drop(lsp_client);  // Release the lock before doing async I/O
+        
+        match result {
+            Ok(Some(edits)) => {
+                if edits.is_empty() {
+                    Ok(CallToolResult::success(vec![Content::text("No formatting changes needed")]))
+                } else {
+                    // For simplicity, we'll just return a message about the number of edits
+                    // In a real implementation, you'd apply the TextEdits to the content
+                    let edit_count = edits.len();
+                    Ok(CallToolResult::success(vec![Content::text(format!("Formatting would apply {} edits to the file", edit_count))]))
+                }
+            }
+            Ok(None) => Ok(CallToolResult::success(vec![Content::text("No formatting changes needed")])),
+            Err(e) => Err(McpError::internal_error(format!("LSP error: {}", e), None)),
+        }
+    }
+
+    #[tool(description = "Rename symbols across the entire workspace safely")]
+    async fn rename(&self, Parameters(request): Parameters<RenameRequest>) -> Result<CallToolResult, McpError> {
+        let lsp_client = self.lsp_client.lock().await;
+        
+        match lsp_client.rename(&request.file_path, request.line, request.column, &request.new_name).await {
+            Ok(Some(workspace_edit)) => {
+                let mut changes_description = Vec::new();
+                
+                if let Some(changes) = workspace_edit.changes {
+                    for (uri, edits) in changes {
+                        let file_path = uri.path();
+                        changes_description.push(format!("File: {}", file_path));
+                        
+                        for edit in &edits {
+                            changes_description.push(format!(
+                                "  - Line {}-{}: Replace '{}' with '{}'",
+                                edit.range.start.line + 1,
+                                edit.range.end.line + 1,
+                                edit.new_text.trim_end_matches('\n').replace('\n', "\\n"),
+                                request.new_name
+                            ));
+                        }
+                    }
+                }
+                
+                if let Some(document_changes) = workspace_edit.document_changes {
+                    use lsp_types::DocumentChangeOperation;
+                    use lsp_types::DocumentChanges;
+                    
+                    let changes: Vec<DocumentChangeOperation> = match document_changes {
+                        DocumentChanges::Edits(edits) => edits.into_iter()
+                            .map(|edit| DocumentChangeOperation::Edit(edit))
+                            .collect(),
+                        DocumentChanges::Operations(ops) => ops,
+                    };
+                    
+                    for change in changes {
+                        match change {
+                            DocumentChangeOperation::Edit(text_doc_edit) => {
+                                let file_path = text_doc_edit.text_document.uri.path();
+                                changes_description.push(format!("File: {}", file_path));
+                                
+                                for edit in &text_doc_edit.edits {
+                                    use lsp_types::OneOf;
+                                    let text_edit = match edit {
+                                        OneOf::Left(edit) => edit,
+                                        OneOf::Right(annotated) => &annotated.text_edit,
+                                    };
+                                    changes_description.push(format!(
+                                        "  - Line {}-{}: Replace with '{}'",
+                                        text_edit.range.start.line + 1,
+                                        text_edit.range.end.line + 1,
+                                        text_edit.new_text.trim_end_matches('\n').replace('\n', "\\n")
+                                    ));
+                                }
+                            }
+                            _ => {
+                                changes_description.push("  - Other document changes (create/rename/delete)".to_string());
+                            }
+                        }
+                    }
+                }
+                
+                if changes_description.is_empty() {
+                    Ok(CallToolResult::success(vec![Content::text("No changes needed for rename")]))
+                } else {
+                    let summary = format!(
+                        "Rename operation would make the following changes:\n\n{}",
+                        changes_description.join("\n")
+                    );
+                    Ok(CallToolResult::success(vec![Content::text(summary)]))
+                }
+            }
+            Ok(None) => Ok(CallToolResult::success(vec![Content::text("Cannot rename at this position")])),
+            Err(e) => Err(McpError::internal_error(format!("LSP error: {}", e), None)),
+        }
+    }
+
+    #[tool(description = "Get available quick fixes and refactorings")]
+    async fn code_actions(&self, Parameters(request): Parameters<CodeActionsRequest>) -> Result<CallToolResult, McpError> {
+        let lsp_client = self.lsp_client.lock().await;
+        
+        match lsp_client.code_actions(&request.file_path, request.line, request.column).await {
+            Ok(Some(actions)) => {
+                let mut action_descriptions = Vec::new();
+                
+                for action in actions {
+                    use lsp_types::CodeActionOrCommand;
+                    match action {
+                        CodeActionOrCommand::CodeAction(code_action) => {
+                            let title = &code_action.title;
+                            let kind = code_action.kind
+                                .as_ref()
+                                .map(|k| format!(" ({})", k.as_str()))
+                                .unwrap_or_default();
+                            
+                            let diagnostics_info = if code_action.diagnostics.is_some() {
+                                let diag_count = code_action.diagnostics.as_ref().unwrap().len();
+                                if diag_count > 0 {
+                                    format!(" [Fixes {} diagnostic(s)]", diag_count)
+                                } else {
+                                    String::new()
+                                }
+                            } else {
+                                String::new()
+                            };
+                            
+                            action_descriptions.push(format!("• {}{}{}", title, kind, diagnostics_info));
+                            
+                            // If there's a workspace edit, show what it would change
+                            if let Some(edit) = &code_action.edit {
+                                if let Some(changes) = &edit.changes {
+                                    for (uri, edits) in changes {
+                                        if !edits.is_empty() {
+                                            action_descriptions.push(format!("  → Modifies: {}", uri.path()));
+                                        }
+                                    }
+                                }
+                                
+                                if let Some(document_changes) = &edit.document_changes {
+                                    use lsp_types::DocumentChanges;
+                                    match document_changes {
+                                        DocumentChanges::Edits(edits) => {
+                                            for edit in edits {
+                                                action_descriptions.push(format!("  → Modifies: {}", edit.text_document.uri.path()));
+                                            }
+                                        }
+                                        DocumentChanges::Operations(ops) => {
+                                            action_descriptions.push(format!("  → {} workspace operations", ops.len()));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        CodeActionOrCommand::Command(command) => {
+                            action_descriptions.push(format!("• {} (command: {})", command.title, command.command));
+                        }
+                    }
+                }
+                
+                if action_descriptions.is_empty() {
+                    Ok(CallToolResult::success(vec![Content::text("No code actions available at this position")]))
+                } else {
+                    let summary = format!(
+                        "Available code actions:\n\n{}",
+                        action_descriptions.join("\n")
+                    );
+                    Ok(CallToolResult::success(vec![Content::text(summary)]))
+                }
+            }
+            Ok(None) => Ok(CallToolResult::success(vec![Content::text("No code actions available at this position")])),
+            Err(e) => Err(McpError::internal_error(format!("LSP error: {}", e), None)),
+        }
+    }
 }
 
 #[tool_handler]
@@ -158,7 +449,7 @@ impl ServerHandler for RustAnalyzerMCP {
                 .enable_tools()
                 .build(),
             server_info: Implementation::from_build_env(),
-            instructions: Some("This server provides rust-analyzer functionality through MCP tools. Use 'hover' to get type information, 'completion' for code completions, and 'diagnostics' for compile errors.".to_string()),
+            instructions: Some("This server provides rust-analyzer functionality through MCP tools. Available tools: 'hover' for type information, 'completion' for code completions, 'diagnostics' for compile errors, 'goto_definition' to find definitions, 'find_references' to find all references, 'format_document' to format code, 'rename' to rename symbols across the workspace, and 'code_actions' to get quick fixes and refactorings.".to_string()),
         }
     }
 

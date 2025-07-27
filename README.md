@@ -30,7 +30,7 @@ Add this to your Claude Desktop config (`~/Library/Application Support/Claude/cl
 
 ## Available Tools
 
-### rust_analyzer.hover
+### hover
 Get type information and documentation at a specific position.
 
 **Parameters:**
@@ -47,7 +47,7 @@ Get type information and documentation at a specific position.
 }
 ```
 
-### rust_analyzer.completion
+### completion
 Get code completions at a specific position.
 
 **Parameters:**
@@ -55,13 +55,13 @@ Get code completions at a specific position.
 - `line`: Line number (0-indexed)
 - `column`: Column number (0-indexed)
 
-### rust_analyzer.diagnostics
+### diagnostics
 Get compile errors and warnings for a file.
 
 **Parameters:**
 - `file_path`: Path to the Rust file
 
-### rust_analyzer.goto_definition
+### goto_definition
 Find the definition location of a symbol.
 
 **Parameters:**
@@ -69,19 +69,20 @@ Find the definition location of a symbol.
 - `line`: Line number (0-indexed)
 - `column`: Column number (0-indexed)
 
-### rust_analyzer.format
-Format a Rust file using rustfmt.
-
-**Parameters:**
-- `file_path`: Path to the Rust file
-
-### rust_analyzer.references
+### find_references
 Find all references to a symbol.
 
 **Parameters:**
 - `file_path`: Path to the Rust file
 - `line`: Line number (0-indexed)
 - `column`: Column number (0-indexed)
+- `include_declaration`: Include the declaration in results (optional, default: true)
+
+### format_document
+Format a Rust file using rustfmt.
+
+**Parameters:**
+- `file_path`: Path to the Rust file
 
 ## Example Workflow
 

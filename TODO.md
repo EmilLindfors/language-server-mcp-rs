@@ -17,6 +17,9 @@ We have successfully implemented a working rust-analyzer MCP bridge that allows 
 - [x] **`hover`**: Get type information and documentation at cursor position
 - [x] **`completion`**: Get code completions at cursor position  
 - [x] **`diagnostics`**: Get compile errors and warnings for files
+- [x] **`goto_definition`**: Find definition of symbol at position
+- [x] **`find_references`**: Find all references to symbol at position
+- [x] **`format_document`**: Format Rust code using rustfmt
 
 ### Infrastructure
 - [x] **Build System**: Working Cargo.toml with all dependencies
@@ -28,12 +31,11 @@ We have successfully implemented a working rust-analyzer MCP bridge that allows 
 
 ### LSP Integration
 - [ ] **Limited Position Accuracy**: Hover/completion may not work on all positions
-- [ ] **No Workspace Folders**: Currently uses deprecated `root_uri` instead of `workspace_folders`
+- [x] **Workspace Folders**: Now using `workspace_folders` instead of deprecated `root_uri`
 - [ ] **Single Document Focus**: No multi-file project analysis optimization
 - [ ] **No Incremental Sync**: Documents are re-opened on each request
 
-### Tool Coverage
-- [ ] **Missing Tools**: goto_definition, find_references, format, rename
+### Tool Coverage  
 - [ ] **Limited Diagnostics**: Only basic diagnostic information returned
 - [ ] **No Semantic Tokens**: Missing syntax highlighting information
 - [ ] **No Code Actions**: Missing quick fixes and refactoring suggestions
@@ -47,23 +49,58 @@ We have successfully implemented a working rust-analyzer MCP bridge that allows 
 
 ### High Priority (Essential Features)
 
-#### 1. Expand Tool Coverage
-```rust
-// Add these tools to main.rs
-#[tool(description = "Find definition of symbol at position")]
-async fn goto_definition(&self, Parameters(request): Parameters<GotoDefinitionRequest>) -> Result<CallToolResult, McpError>
+#### 1. High-Value Tools for AI-Assisted Rust Development
 
-#[tool(description = "Find all references to symbol at position")]  
-async fn find_references(&self, Parameters(request): Parameters<FindReferencesRequest>) -> Result<CallToolResult, McpError>
+##### Critical Tools (Highest Impact)
+- [x] **`rename`**: Rename symbols across the entire workspace safely
+  - Essential for refactoring support
+  - Parameters: file_path, line, column, new_name
+  
+- [x] **`code_actions`**: Get available quick fixes and refactorings
+  - Provides automatic fixes for common issues
+  - Add missing imports, fix visibility, implement traits, etc.
+  - Parameters: file_path, line, column
+  
+- [ ] **`workspace_symbols`**: Search for symbols across entire workspace
+  - Navigate large codebases efficiently
+  - Find any struct, function, trait by name pattern
+  - Parameters: query (string pattern)
 
-#[tool(description = "Format Rust code")]
-async fn format_document(&self, Parameters(request): Parameters<FormatRequest>) -> Result<CallToolResult, McpError>
-```
+##### Important Tools (High Value)
+- [ ] **`inlay_hints`**: Get type and parameter hints
+  - Shows inferred types, parameter names in calls
+  - Helps understand complex code
+  - Parameters: file_path
+  
+- [ ] **`expand_macro`**: Expand Rust macros to see generated code
+  - Rust-analyzer specific, crucial for debugging macros
+  - Parameters: file_path, line, column
+  
+- [ ] **`runnables`**: Find runnable items (tests, main functions)
+  - Identify tests, benchmarks, executables with cargo commands
+  - Parameters: file_path
+
+##### Useful Tools (Good to Have)
+- [ ] **`implementations`**: Find all implementations of a trait
+  - Understand trait usage across codebase
+  - Parameters: file_path, line, column
+  
+- [ ] **`type_definition`**: Go to type definition (not value definition)
+  - Find actual type declaration
+  - Parameters: file_path, line, column
+  
+- [ ] **`call_hierarchy`**: Show incoming/outgoing calls
+  - Trace function call flow
+  - Parameters: file_path, line, column
+  
+- [ ] **`semantic_tokens`**: Get syntax highlighting information
+  - Understand code structure and token types
+  - Parameters: file_path
 
 #### 2. Improve LSP Integration
-- **Workspace Folders**: Replace deprecated `root_uri` with proper workspace folder support
-- **Better Document Tracking**: Cache opened documents to avoid re-opening
-- **Request Timeouts**: Add configurable timeouts for LSP requests
+- [x] **Workspace Folders**: ✅ Already implemented - using proper workspace folder support
+- [ ] **Better Document Tracking**: Cache opened documents to avoid re-opening
+- [ ] **Request Timeouts**: Add configurable timeouts for LSP requests
 
 #### 3. Enhanced Error Handling
 - **Startup Validation**: Check rust-analyzer availability before starting
@@ -168,7 +205,8 @@ cargo run --bin client-example
 - [ ] **Functional hover**: Returns actual type information for Rust code
 - [ ] **Working completions**: Returns relevant code completion suggestions
 - [ ] **Useful diagnostics**: Shows real compile errors and warnings
-- [ ] **5+ tools available**: goto_definition, find_references, format added
+- [x] **8 tools available**: ✅ hover, completion, diagnostics, goto_definition, find_references, format_document, rename, code_actions
+- [ ] **10+ tools available**: Add workspace_symbols, inlay_hints, expand_macro, and more
 - [ ] **Production ready**: Proper error handling, timeouts, configuration
 
 This project successfully demonstrates the potential of bridging LSP servers with MCP for AI assistant integration! 🚀

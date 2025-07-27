@@ -103,6 +103,76 @@ async fn main() -> Result<()> {
         .await?;
     tracing::info!("User struct hover result: {struct_hover_result:#?}");
 
+    // Example 5: Test goto_definition
+    tracing::info!("\n=== Testing goto_definition ===");
+    let goto_def_result = client
+        .call_tool(CallToolRequestParam {
+            name: "goto_definition".into(),
+            arguments: Some(object!({
+                "file_path": test_file_str,
+                "line": 90,   // Line with a function call or type usage
+                "column": 15  // Position for goto definition
+            })),
+        })
+        .await?;
+    tracing::info!("Goto definition result: {goto_def_result:#?}");
+
+    // Example 6: Test find_references
+    tracing::info!("\n=== Testing find_references ===");
+    let find_refs_result = client
+        .call_tool(CallToolRequestParam {
+            name: "find_references".into(),
+            arguments: Some(object!({
+                "file_path": test_file_str,
+                "line": 40,   // Line with a symbol definition
+                "column": 10,  // Position for finding references
+                "include_declaration": true
+            })),
+        })
+        .await?;
+    tracing::info!("Find references result: {find_refs_result:#?}");
+
+    // Example 7: Test format_document
+    tracing::info!("\n=== Testing format_document ===");
+    let format_result = client
+        .call_tool(CallToolRequestParam {
+            name: "format_document".into(),
+            arguments: Some(object!({
+                "file_path": test_file_str
+            })),
+        })
+        .await?;
+    tracing::info!("Format document result: {format_result:#?}");
+
+    // Example 8: Test rename
+    tracing::info!("\n=== Testing rename ===");
+    let rename_result = client
+        .call_tool(CallToolRequestParam {
+            name: "rename".into(),
+            arguments: Some(object!({
+                "file_path": test_file_str,
+                "line": 73,   // Line with RustAnalyzerMCP struct
+                "column": 12, // Position at the struct name
+                "new_name": "RustAnalyzerMCPServer"
+            })),
+        })
+        .await?;
+    tracing::info!("Rename result: {rename_result:#?}");
+
+    // Example 9: Test code_actions
+    tracing::info!("\n=== Testing code_actions ===");
+    let code_actions_result = client
+        .call_tool(CallToolRequestParam {
+            name: "code_actions".into(),
+            arguments: Some(object!({
+                "file_path": test_file_str,
+                "line": 80,   // Line with struct definition
+                "column": 10  // Position for code actions
+            })),
+        })
+        .await?;
+    tracing::info!("Code actions result: {code_actions_result:#?}");
+
     // Shutdown the client
     client.cancel().await?;
 
