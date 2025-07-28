@@ -13,32 +13,49 @@ We have successfully implemented a working rust-analyzer MCP bridge that allows 
 - [x] **Document Synchronization**: Proper `textDocument/didOpen` handling
 - [x] **Error Handling**: Graceful error propagation from LSP to MCP
 
-### Available Tools
+### Available Tools (15 total)
+
+#### Core LSP Tools
 - [x] **`hover`**: Get type information and documentation at cursor position
 - [x] **`completion`**: Get code completions at cursor position  
 - [x] **`diagnostics`**: Get compile errors and warnings for files
 - [x] **`goto_definition`**: Find definition of symbol at position
 - [x] **`find_references`**: Find all references to symbol at position
 - [x] **`format_document`**: Format Rust code using rustfmt
+- [x] **`rename`**: Rename symbols across the entire workspace safely
+- [x] **`code_actions`**: Get available quick fixes and refactorings
+
+#### Advanced Tools
+- [x] **`workspace_symbols`**: Search for symbols across entire workspace
+- [x] **`inlay_hints`**: Get type and parameter hints
+- [x] **`expand_macro`**: Expand Rust macros to see generated code
+
+#### AI-Focused Tools (NEW)
+- [x] **`document_symbols`**: Get document structure and symbols for code analysis
+- [x] **`signature_help`**: Get function signature help for parameter assistance
+- [x] **`document_highlight`**: Highlight all occurrences of symbol at position
+- [x] **`selection_range`**: Get smart selection ranges for code expansion
 
 ### Infrastructure
 - [x] **Build System**: Working Cargo.toml with all dependencies
 - [x] **Client Example**: Full working example demonstrating all features
 - [x] **Documentation**: README with setup and usage instructions
 - [x] **Project Structure**: Clean separation of concerns (main, lsp_client, tools)
+- [x] **Initialization System**: Background rust-analyzer startup with readiness checking
+- [x] **AI-Optimized**: Tools specifically designed for AI assistant integration
 
 ## 🚧 Known Issues & Limitations
 
 ### LSP Integration
-- [ ] **Limited Position Accuracy**: Hover/completion may not work on all positions
-- [x] **Workspace Folders**: Now using `workspace_folders` instead of deprecated `root_uri`
+- [x] **Initialization Delays**: ✅ Fixed - rust-analyzer now starts during server init with readiness checking
+- [x] **Workspace Folders**: ✅ Using `workspace_folders` instead of deprecated `root_uri`
 - [ ] **Single Document Focus**: No multi-file project analysis optimization
 - [ ] **No Incremental Sync**: Documents are re-opened on each request
 
 ### Tool Coverage  
-- [ ] **Limited Diagnostics**: Only basic diagnostic information returned
-- [ ] **No Semantic Tokens**: Missing syntax highlighting information
-- [ ] **No Code Actions**: Missing quick fixes and refactoring suggestions
+- [x] **Rich Diagnostics**: ✅ Shows detailed compile errors and warnings with locations
+- [x] **Code Actions**: ✅ Implemented - quick fixes and refactoring suggestions available
+- [ ] **No Semantic Tokens**: Missing syntax highlighting information (low priority)
 
 ### Error Handling
 - [ ] **LSP Startup Failures**: Better handling when rust-analyzer fails to start
@@ -61,18 +78,18 @@ We have successfully implemented a working rust-analyzer MCP bridge that allows 
   - Add missing imports, fix visibility, implement traits, etc.
   - Parameters: file_path, line, column
   
-- [ ] **`workspace_symbols`**: Search for symbols across entire workspace
+- [x] **`workspace_symbols`**: ✅ Search for symbols across entire workspace
   - Navigate large codebases efficiently
   - Find any struct, function, trait by name pattern
   - Parameters: query (string pattern)
 
 ##### Important Tools (High Value)
-- [ ] **`inlay_hints`**: Get type and parameter hints
+- [x] **`inlay_hints`**: ✅ Get type and parameter hints
   - Shows inferred types, parameter names in calls
   - Helps understand complex code
   - Parameters: file_path
   
-- [ ] **`expand_macro`**: Expand Rust macros to see generated code
+- [x] **`expand_macro`**: ✅ Expand Rust macros to see generated code
   - Rust-analyzer specific, crucial for debugging macros
   - Parameters: file_path, line, column
   
@@ -202,11 +219,13 @@ cargo run --bin client-example
 - [x] Clean error handling and logging
 
 ### Next Milestone Goals 🎯
-- [ ] **Functional hover**: Returns actual type information for Rust code
-- [ ] **Working completions**: Returns relevant code completion suggestions
-- [ ] **Useful diagnostics**: Shows real compile errors and warnings
+- [x] **Functional hover**: ✅ Returns actual type information for Rust code
+- [x] **Working completions**: ✅ Returns relevant code completion suggestions
+- [x] **Useful diagnostics**: ✅ Shows real compile errors and warnings
 - [x] **8 tools available**: ✅ hover, completion, diagnostics, goto_definition, find_references, format_document, rename, code_actions
-- [ ] **10+ tools available**: Add workspace_symbols, inlay_hints, expand_macro, and more
+- [x] **11 tools available**: ✅ Added workspace_symbols, inlay_hints, expand_macro
+- [x] **15 tools available**: ✅ Added AI-focused tools: document_symbols, signature_help, document_highlight, selection_range
+- [x] **Initialization improvements**: ✅ Added readiness checking to prevent hanging on first requests
 - [ ] **Production ready**: Proper error handling, timeouts, configuration
 
 This project successfully demonstrates the potential of bridging LSP servers with MCP for AI assistant integration! 🚀

@@ -1,9 +1,9 @@
 use anyhow::Result;
 use rmcp::{
-    ServiceExt,
     model::CallToolRequestParam,
     object,
     transport::{ConfigureCommandExt, TokioChildProcess},
+    ServiceExt,
 };
 use tokio::process::Command;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -26,13 +26,13 @@ async fn main() -> Result<()> {
         .join("target")
         .join("debug")
         .join("language-server-mcp");
-    
+
     let client = ()
-        .serve(TokioChildProcess::new(Command::new(&server_path).configure(
-            |_cmd| {
+        .serve(TokioChildProcess::new(
+            Command::new(&server_path).configure(|_cmd| {
                 // No additional configuration needed
-            },
-        ))?)
+            }),
+        )?)
         .await?;
 
     // Get server info
@@ -172,6 +172,44 @@ async fn main() -> Result<()> {
         })
         .await?;
     tracing::info!("Code actions result: {code_actions_result:#?}");
+
+    // Example 10: Test workspace_symbols
+    tracing::info!("\n=== Testing workspace_symbols ===");
+    let workspace_symbols_result = client
+        .call_tool(CallToolRequestParam {
+            name: "workspace_symbols".into(),
+            arguments: Some(object!({
+                "query": "Rust"  // Search for symbols containing "Rust"
+            })),
+        })
+        .await?;
+    tracing::info!("Workspace symbols result: {workspace_symbols_result:#?}");
+
+    // Example 11: Test inlay_hints
+    tracing::info!("\n=== Testing inlay_hints ===");
+    let inlay_hints_result = client
+        .call_tool(CallToolRequestParam {
+            name: "inlay_hints".into(),
+            arguments: Some(object!({
+                "file_path": test_file_str
+            })),
+        })
+        .await?;
+    tracing::info!("Inlay hints result: {inlay_hints_result:#?}");
+
+    // Example 12: Test expand_macro (testing on a position that might have a macro)
+    tracing::info!("\n=== Testing expand_macro ===");
+    let expand_macro_result = client
+        .call_tool(CallToolRequestParam {
+            name: "expand_macro".into(),
+            arguments: Some(object!({
+                "file_path": test_file_str,
+                "line": 86,   // Line with #[tool_router] macro
+                "column": 5   // Position at the macro
+            })),
+        })
+        .await?;
+    tracing::info!("Expand macro result: {expand_macro_result:#?}");
 
     // Shutdown the client
     client.cancel().await?;
