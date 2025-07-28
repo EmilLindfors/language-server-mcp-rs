@@ -49,8 +49,8 @@ async fn main() -> Result<()> {
     let test_file = std::env::current_dir()?.join("src/main.rs");
     let test_file_str = test_file.to_str().unwrap();
 
-    // Example 1: Get hover information
-    tracing::info!("\n=== Testing hover ===");
+    // Example 1: Get hover information (first call - should open document)
+    tracing::info!("\n=== Testing hover (first call) ===");
     let hover_result = client
         .call_tool(CallToolRequestParam {
             name: "hover".into(),
@@ -62,6 +62,20 @@ async fn main() -> Result<()> {
         })
         .await?;
     tracing::info!("Hover result: {hover_result:#?}");
+
+    // Example 1b: Get hover information on same file (should use cache)
+    tracing::info!("\n=== Testing hover (second call on same file - should use cache) ===");
+    let hover_result2 = client
+        .call_tool(CallToolRequestParam {
+            name: "hover".into(),
+            arguments: Some(object!({
+                "file_path": test_file_str,
+                "line": 100,  // Different line
+                "column": 10  // Different position
+            })),
+        })
+        .await?;
+    tracing::info!("Hover result 2: {hover_result2:#?}");
 
     // Example 2: Get diagnostics
     tracing::info!("\n=== Testing diagnostics ===");
@@ -210,6 +224,60 @@ async fn main() -> Result<()> {
         })
         .await?;
     tracing::info!("Expand macro result: {expand_macro_result:#?}");
+
+    // Example 13: Test runnables on main.rs
+    tracing::info!("\n=== Testing runnables on main.rs ===");
+    let runnables_result = client
+        .call_tool(CallToolRequestParam {
+            name: "runnables".into(),
+            arguments: Some(object!({
+                "file_path": test_file_str
+            })),
+        })
+        .await?;
+    tracing::info!("Runnables result: {runnables_result:#?}");
+
+    // Example 14: Test runnables on test file with actual tests
+    let test_file_with_tests = std::env::current_dir()?.join("examples/test_file.rs");
+    let test_file_with_tests_str = test_file_with_tests.to_str().unwrap();
+    tracing::info!("\n=== Testing runnables on test_file.rs ===");
+    let runnables_test_result = client
+        .call_tool(CallToolRequestParam {
+            name: "runnables".into(),
+            arguments: Some(object!({
+                "file_path": test_file_with_tests_str
+            })),
+        })
+        .await?;
+    tracing::info!("Runnables test result: {runnables_test_result:#?}");
+
+    // Example 15: Test implementations on main.rs
+    tracing::info!("\n=== Testing implementations on main.rs ===");
+    let implementations_result = client
+        .call_tool(CallToolRequestParam {
+            name: "implementations".into(),
+            arguments: Some(object!({
+                "file_path": test_file_str,
+                "line": 50,   // Try to find implementations of a trait or type
+                "column": 10
+            })),
+        })
+        .await?;
+    tracing::info!("Implementations result: {implementations_result:#?}");
+
+    // Example 16: Test implementations on test file with actual trait implementations
+    tracing::info!("\n=== Testing implementations on Greetable trait ===");
+    let implementations_trait_result = client
+        .call_tool(CallToolRequestParam {
+            name: "implementations".into(),
+            arguments: Some(object!({
+                "file_path": test_file_with_tests_str,
+                "line": 7,    // Line with Greetable trait definition
+                "column": 6   // Position on trait name
+            })),
+        })
+        .await?;
+    tracing::info!("Trait implementations result: {implementations_trait_result:#?}");
 
     // Shutdown the client
     client.cancel().await?;

@@ -1,5 +1,6 @@
-use lsp_types::*;
+use lsp_types::{request::GotoImplementationParams, *};
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -7,7 +8,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 pub struct LspClient {
     process: Child,
@@ -16,6 +17,7 @@ pub struct LspClient {
     request_id: Mutex<i64>,
     workspace_root: PathBuf,
     is_ready: Arc<AtomicBool>,
+    opened_documents: Mutex<HashSet<String>>,
 }
 
 impl LspClient {
@@ -38,6 +40,7 @@ impl LspClient {
             request_id: Mutex::new(0),
             workspace_root: workspace_root.clone(),
             is_ready: Arc::new(AtomicBool::new(false)),
+            opened_documents: Mutex::new(HashSet::new()),
         };
 
         // Initialize synchronously for now - we'll add async initialization later
@@ -92,6 +95,17 @@ impl LspClient {
     }
 
     pub async fn open_document(&self, file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Check if document is already opened
+        {
+            let opened_docs = self.opened_documents.lock().await;
+            if opened_docs.contains(file_path) {
+                debug!("Document already opened, using cache: {}", file_path);
+                return Ok(());
+            }
+        }
+
+        // Document not opened yet, open it
+        debug!("Opening new document: {}", file_path);
         let content = tokio::fs::read_to_string(file_path).await?;
         let params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
@@ -102,7 +116,51 @@ impl LspClient {
             },
         };
 
-        self.notify("textDocument/didOpen", params).await
+        self.notify("textDocument/didOpen", params).await?;
+
+        // Mark document as opened
+        {
+            let mut opened_docs = self.opened_documents.lock().await;
+            opened_docs.insert(file_path.to_string());
+            debug!("Document opened and cached. Total opened documents: {}", opened_docs.len());
+        }
+
+        Ok(())
+    }
+
+    pub async fn close_document(&self, file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Check if document is opened
+        {
+            let opened_docs = self.opened_documents.lock().await;
+            if !opened_docs.contains(file_path) {
+                debug!("Document not opened, no need to close: {}", file_path);
+                return Ok(()); // Already closed or never opened
+            }
+        }
+
+        // Close the document
+        debug!("Closing document: {}", file_path);
+        let params = DidCloseTextDocumentParams {
+            text_document: TextDocumentIdentifier {
+                uri: Url::from_file_path(file_path).unwrap(),
+            },
+        };
+
+        self.notify("textDocument/didClose", params).await?;
+
+        // Remove from opened documents tracking
+        {
+            let mut opened_docs = self.opened_documents.lock().await;
+            opened_docs.remove(file_path);
+            debug!("Document closed. Total opened documents: {}", opened_docs.len());
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_opened_documents_count(&self) -> usize {
+        let opened_docs = self.opened_documents.lock().await;
+        opened_docs.len()
     }
 
     pub async fn hover(
@@ -490,6 +548,51 @@ impl LspClient {
         };
 
         self.request("textDocument/selectionRange", params).await
+    }
+
+    pub async fn runnables(
+        &self,
+        file_path: &str,
+    ) -> Result<Option<Value>, Box<dyn std::error::Error>> {
+        self.wait_for_ready().await;
+        // Ensure document is open
+        self.open_document(file_path).await?;
+
+        // rust-analyzer uses a custom runnables request
+        let params = json!({
+            "textDocument": {
+                "uri": Url::from_file_path(file_path).unwrap()
+            }
+        });
+
+        // This is a rust-analyzer specific extension, not standard LSP
+        self.request("rust-analyzer/runnables", params).await
+    }
+
+    pub async fn implementations(
+        &self,
+        file_path: &str,
+        line: u32,
+        column: u32,
+    ) -> Result<Option<Vec<Location>>, Box<dyn std::error::Error>> {
+        self.wait_for_ready().await;
+        // Ensure document is open
+        self.open_document(file_path).await?;
+        let params = GotoImplementationParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: Url::from_file_path(file_path).unwrap(),
+                },
+                position: Position {
+                    line,
+                    character: column,
+                },
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+        };
+
+        self.request("textDocument/implementation", params).await
     }
 
     async fn request<P: serde::Serialize, R: serde::de::DeserializeOwned>(

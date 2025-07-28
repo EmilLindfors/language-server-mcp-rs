@@ -119,6 +119,18 @@ pub struct SelectionRangeRequest {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct RunnablesRequest {
+    pub file_path: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ImplementationsRequest {
+    pub file_path: String,
+    pub line: u32,
+    pub column: u32,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct PositionInfo {
     pub line: u32,
     pub column: u32,
@@ -1058,6 +1070,140 @@ impl RustAnalyzerMCP {
             Err(e) => Err(McpError::internal_error(format!("LSP error: {}", e), None)),
         }
     }
+
+    #[tool(description = "Find runnable items (tests, benchmarks, executables) with cargo commands")]
+    async fn runnables(
+        &self,
+        Parameters(request): Parameters<RunnablesRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let lsp_client = self.lsp_client.lock().await;
+
+        match lsp_client.runnables(&request.file_path).await {
+            Ok(Some(runnables)) => {
+                if let Some(array) = runnables.as_array() {
+                    if array.is_empty() {
+                        Ok(CallToolResult::success(vec![Content::text(
+                            "No runnable items found",
+                        )]))
+                    } else {
+                        let runnables_text = array
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, runnable)| {
+                                let obj = runnable.as_object()?;
+                                let label = obj.get("label")?.as_str().unwrap_or("Unknown");
+                                let kind = obj.get("kind")?.as_str().unwrap_or("Unknown");
+                                let location = obj.get("location")?;
+                                let range = location.get("range")?;
+                                let start = range.get("start")?;
+                                let line = start.get("line")?.as_u64().unwrap_or(0) + 1;
+                                let character = start.get("character")?.as_u64().unwrap_or(0) + 1;
+
+                                // Extract cargo command if available
+                                let cargo_cmd = if let Some(args) = obj.get("args") {
+                                    if let Some(cargo_args) = args.get("cargoArgs") {
+                                        if let Some(cargo_array) = cargo_args.as_array() {
+                                            let cmd_parts: Vec<String> = cargo_array
+                                                .iter()
+                                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                                .collect();
+                                            if !cmd_parts.is_empty() {
+                                                format!(" → cargo {}", cmd_parts.join(" "))
+                                            } else {
+                                                String::new()
+                                            }
+                                        } else {
+                                            String::new()
+                                        }
+                                    } else {
+                                        String::new()
+                                    }
+                                } else {
+                                    String::new()
+                                };
+
+                                Some(format!(
+                                    "{}. {} [{}] at line {}:{}{}",
+                                    i + 1, label, kind, line, character, cargo_cmd
+                                ))
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+
+                        if runnables_text.is_empty() {
+                            Ok(CallToolResult::success(vec![Content::text(
+                                "No valid runnable items found",
+                            )]))
+                        } else {
+                            Ok(CallToolResult::success(vec![Content::text(format!(
+                                "Runnable items:\n{}",
+                                runnables_text
+                            ))]))
+                        }
+                    }
+                } else {
+                    Ok(CallToolResult::success(vec![Content::text(
+                        "Unexpected runnables response format",
+                    )]))
+                }
+            }
+            Ok(None) => Ok(CallToolResult::success(vec![Content::text(
+                "No runnable items found",
+            )])),
+            Err(e) => Err(McpError::internal_error(format!("LSP error: {}", e), None)),
+        }
+    }
+
+    #[tool(description = "Find all implementations of a trait at the given position")]
+    async fn implementations(
+        &self,
+        Parameters(request): Parameters<ImplementationsRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let lsp_client = self.lsp_client.lock().await;
+
+        match lsp_client
+            .implementations(&request.file_path, request.line, request.column)
+            .await
+        {
+            Ok(Some(locations)) => {
+                if locations.is_empty() {
+                    Ok(CallToolResult::success(vec![Content::text(
+                        "No implementations found",
+                    )]))
+                } else {
+                    let implementations_text = locations
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, loc)| {
+                            let path = loc
+                                .uri
+                                .to_file_path()
+                                .ok()
+                                .and_then(|p| p.to_str().map(|s| s.to_string()))
+                                .unwrap_or_else(|| loc.uri.to_string());
+                            format!(
+                                "{}. Implementation at: {}:{}:{}",
+                                i + 1,
+                                path,
+                                loc.range.start.line + 1,
+                                loc.range.start.character + 1
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+
+                    Ok(CallToolResult::success(vec![Content::text(format!(
+                        "Found implementations:\n{}",
+                        implementations_text
+                    ))]))
+                }
+            }
+            Ok(None) => Ok(CallToolResult::success(vec![Content::text(
+                "No implementations found",
+            )])),
+            Err(e) => Err(McpError::internal_error(format!("LSP error: {}", e), None)),
+        }
+    }
 }
 
 #[tool_handler]
@@ -1069,7 +1215,7 @@ impl ServerHandler for RustAnalyzerMCP {
                 .enable_tools()
                 .build(),
             server_info: Implementation::from_build_env(),
-            instructions: Some("This server provides rust-analyzer functionality through MCP tools. Available tools: 'hover' for type information, 'completion' for code completions, 'diagnostics' for compile errors, 'goto_definition' to find definitions, 'find_references' to find all references, 'format_document' to format code, 'rename' to rename symbols across the workspace, 'code_actions' to get quick fixes and refactorings, 'workspace_symbols' to search symbols across the workspace, 'inlay_hints' to get type and parameter hints, 'expand_macro' to expand Rust macros, 'document_symbols' for code structure analysis, 'signature_help' for function parameter assistance, 'document_highlight' for symbol occurrence highlighting, and 'selection_range' for smart selection expansion.".to_string()),
+            instructions: Some("This server provides rust-analyzer functionality through MCP tools. Available tools: 'hover' for type information, 'completion' for code completions, 'diagnostics' for compile errors, 'goto_definition' to find definitions, 'find_references' to find all references, 'format_document' to format code, 'rename' to rename symbols across the workspace, 'code_actions' to get quick fixes and refactorings, 'workspace_symbols' to search symbols across the workspace, 'inlay_hints' to get type and parameter hints, 'expand_macro' to expand Rust macros, 'document_symbols' for code structure analysis, 'signature_help' for function parameter assistance, 'document_highlight' for symbol occurrence highlighting, 'selection_range' for smart selection expansion, 'runnables' to find tests, benchmarks, and executables, and 'implementations' to find all implementations of a trait.".to_string()),
         }
     }
 
